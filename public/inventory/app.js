@@ -33,6 +33,7 @@ const permissionsNotice = document.getElementById("permissionsNotice");
 let pendingUnit = null;
 let unitsCache = [];
 let lastError = "";
+let lastSuccess = "";
 
 const filters = {
   tower: document.getElementById("filterTower"),
@@ -54,6 +55,7 @@ function initialStatusFilter() {
 
 async function apiGetUnits() {
   lastError = "";
+  lastSuccess = "";
   const res = await fetch(`/api/inventory/units?scope=${encodeURIComponent(scope)}`, {
     credentials: "same-origin",
     cache: "no-store"
@@ -73,6 +75,7 @@ async function apiGetUnits() {
 
 async function apiUpsertUnit(payload) {
   lastError = "";
+  lastSuccess = "";
   const res = await fetch("/api/inventory/units", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -92,6 +95,7 @@ async function apiUpsertUnit(payload) {
     lastError = msg || `Could not save (HTTP ${res ? res.status : "?"}).`;
     return false;
   }
+  lastSuccess = "Saved.";
   return true;
 }
 
@@ -131,11 +135,13 @@ function populateForm(unit) {
 function renderPermissionsNotice() {
   permissionsNotice.classList.add("notice");
   const err = lastError ? `<div style="margin-top:8px;color:#991b1b;font-size:13px;"><strong>Error:</strong> ${lastError}</div>` : "";
+  const ok = lastSuccess ? `<div style="margin-top:8px;color:#166534;font-size:13px;"><strong>Success:</strong> ${lastSuccess}</div>` : "";
   if (scope === "admin") {
     permissionsNotice.innerHTML = `
       <h2>Administrator Access</h2>
       <p>Full stock visibility: Available, Interested, Viewing, Deposit Secured, Payment Secured, Sold/Assigned.</p>
       ${err}
+      ${ok}
     `;
     if (editorPanel) editorPanel.style.display = "";
     return;
@@ -145,6 +151,7 @@ function renderPermissionsNotice() {
     <h2>User Access</h2>
     <p>You can browse inventory signals that remain market-available: Available, Interested, Viewing.</p>
     ${err}
+    ${ok}
   `;
   if (editorPanel) editorPanel.style.display = "none";
 }
@@ -246,7 +253,7 @@ function renderTable(units) {
   if (!units.length) {
     inventoryBody.innerHTML = `
       <tr>
-        <td colspan="9" class="empty-row">No flats match the current filters.</td>
+        <td colspan="10" class="empty-row">No flats match the current filters.</td>
       </tr>
     `;
     return;
@@ -264,6 +271,7 @@ function renderTable(units) {
         <td>${Number(u.price || 0).toLocaleString()}</td>
         <td><span class="status status-${u.status}">${STATUS_LABEL[u.status] || u.status}</span></td>
         <td>${u.customerName || "-"}</td>
+        <td title="${String(u.notes || "").replaceAll('"', "&quot;")}">${u.notes ? String(u.notes).slice(0, 60) : "-"}</td>
         <td>${actionButtons(u)}</td>
       </tr>
     `
@@ -290,8 +298,12 @@ unitForm.addEventListener("submit", async (event) => {
   const formData = getFormData();
   const ok = await apiUpsertUnit(formData);
   if (ok) {
-    resetForm();
+    // Show the updated record immediately, even if filters would hide it.
+    filters.flatNumber.value = formData.flatNumber || "";
     await refresh();
+    renderPermissionsNotice();
+    render();
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 });
 

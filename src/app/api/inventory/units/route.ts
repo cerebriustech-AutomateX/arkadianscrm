@@ -199,37 +199,28 @@ export async function POST(req: Request) {
   }
 
   const body = parsed.data;
+  const data = {
+    tower: body.tower,
+    flatNumber: body.flatNumber,
+    sizeSqft: body.sizeSqft,
+    type: body.type,
+    viewCategory: body.viewCategory,
+    price: BigInt(body.price),
+    status: body.status,
+    customerName: body.customerName ?? null,
+    notes: body.notes ?? null,
+    leadId: body.leadId ?? null,
+    statusAt: new Date(),
+  } as const;
+
+  // If id is provided, update that row. Otherwise upsert by unique flatNumber
+  // to prevent duplicates and make "Save Flat" idempotent.
   const saved = body.id
-    ? await prisma.inventoryUnit.update({
-        where: { id: body.id },
-        data: {
-          tower: body.tower,
-          flatNumber: body.flatNumber,
-          sizeSqft: body.sizeSqft,
-          type: body.type,
-          viewCategory: body.viewCategory,
-          price: BigInt(body.price),
-          status: body.status,
-          customerName: body.customerName ?? null,
-          notes: body.notes ?? null,
-          leadId: body.leadId ?? null,
-          statusAt: new Date(),
-        },
-      })
-    : await prisma.inventoryUnit.create({
-        data: {
-          tower: body.tower,
-          flatNumber: body.flatNumber,
-          sizeSqft: body.sizeSqft,
-          type: body.type,
-          viewCategory: body.viewCategory,
-          price: BigInt(body.price),
-          status: body.status,
-          customerName: body.customerName ?? null,
-          notes: body.notes ?? null,
-          leadId: body.leadId ?? null,
-          statusAt: new Date(),
-        },
+    ? await prisma.inventoryUnit.update({ where: { id: body.id }, data })
+    : await prisma.inventoryUnit.upsert({
+        where: { flatNumber: body.flatNumber },
+        update: data,
+        create: data,
       });
 
   return NextResponse.json({
