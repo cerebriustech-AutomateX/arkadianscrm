@@ -39,7 +39,12 @@ export default async function MyBoardPage({
   const session = await getSession();
   if (!session) redirect(`/login?from=${encodeURIComponent("/pipeline/my-board")}`);
 
-  const isAdmin = (session.role ?? "").toLowerCase() === "admin";
+  const role = (session.role ?? "").toLowerCase();
+  if (role === "ceo") {
+    redirect("/pipeline");
+  }
+
+  const isAdmin = role === "admin";
   const sp = await searchParams;
   const requestedOwnerId = sp.ownerId?.trim();
 
@@ -66,7 +71,7 @@ export default async function MyBoardPage({
 
   return (
     <div className="px-5 sm:px-8 py-8">
-      <div className="max-w-[1440px] mx-auto">
+      <div className="w-full max-w-none">
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6">
           <div>
             <div className="text-xs tracking-[0.2em] uppercase text-medium-grey">My Board</div>

@@ -1,7 +1,15 @@
-export default function SettingsPage() {
+import { redirect } from "next/navigation";
+import { getSession } from "@/lib/auth";
+import { redirectCeoFromAdvisorRoute } from "@/lib/redirect-ceo-from-advisor-routes";
+
+export default async function SettingsPage() {
+  const session = await getSession();
+  if (!session) redirect(`/login?from=${encodeURIComponent("/settings")}`);
+  redirectCeoFromAdvisorRoute(session.role);
+
   return (
     <div className="px-5 sm:px-8 py-8">
-      <div className="max-w-[1440px] mx-auto">
+      <div className="w-full max-w-none">
         <div>
           <h1 className="font-(--font-display) text-3xl sm:text-4xl text-navy tracking-tight">
             Settings
@@ -20,4 +28,3 @@ export default function SettingsPage() {
     </div>
   );
 }
-

@@ -15,7 +15,7 @@ function statusDot(status: string) {
 export default function ConstructionPage() {
   return (
     <div className="px-5 sm:px-8 py-8">
-      <div className="max-w-[1440px] mx-auto">
+      <div className="w-full max-w-none">
         <div>
           <h1 className="font-(--font-display) text-3xl sm:text-4xl text-navy tracking-tight">
             Construction

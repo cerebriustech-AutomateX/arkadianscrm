@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import Image from "next/image";
+import { Eye, EyeOff } from "lucide-react";
 
 export function LoginForm() {
   const router = useRouter();
@@ -13,6 +13,7 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -139,17 +140,30 @@ export function LoginForm() {
                     />
                   </label>
 
-                  <label className="block">
+                  <div className="block">
                     <span className="text-[11px] tracking-[0.28em] uppercase text-white/70">Password</span>
-                    <input
-                      type="password"
-                      autoComplete="current-password"
-                      required
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="mt-2 w-full rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-gold/40"
-                    />
-                  </label>
+                    <div className="relative mt-2">
+                      <input
+                        id="login-password"
+                        type={showPassword ? "text" : "password"}
+                        autoComplete="current-password"
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full rounded-xl border border-white/15 bg-white/10 pl-4 pr-12 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-gold/40"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((v) => !v)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-white/75 hover:text-white hover:bg-white/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gold/50"
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        aria-pressed={showPassword}
+                        aria-controls="login-password"
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
+                      </button>
+                    </div>
+                  </div>
 
                   <button
                     type="submit"
@@ -169,17 +183,26 @@ export function LoginForm() {
             </div>
 
             <div className="px-8 pb-7 sm:pb-9">
-              <div className="text-center text-[11px] text-white/70 leading-relaxed">
-                Demo:{" "}
-                <span className="font-medium text-white">ahmad@arkadians.local</span>,{" "}
-                <span className="font-medium text-white">sara@arkadians.local</span>,{" "}
-                <span className="font-medium text-white">bilal@arkadians.local</span>,{" "}
-                <span className="font-medium text-white">nadia@arkadians.local</span>,{" "}
-                <span className="font-medium text-white">admin@arkadians.local</span>
-                <br />
-                Password: <span className="font-mono text-white">Welcome1!</span>
-                {" · "}
-                Admin: <span className="font-mono text-white">ArkadiansDemo2026!</span>
+              <div className="text-center text-[11px] text-white/70 leading-relaxed space-y-2">
+                <p>
+                  Demo:{" "}
+                  <span className="font-medium text-white">ahmad@arkadians.local</span>,{" "}
+                  <span className="font-medium text-white">sara@arkadians.local</span>,{" "}
+                  <span className="font-medium text-white">bilal@arkadians.local</span>,{" "}
+                  <span className="font-medium text-white">nadia@arkadians.local</span>,{" "}
+                  <span className="font-medium text-white">ceo@arkadians.local</span>,{" "}
+                  <span className="font-medium text-white">admin@arkadians.local</span>
+                </p>
+                <p>
+                  Team / CEO password: <span className="font-mono text-white">Welcome1!</span>
+                  {" · "}
+                  Admin only: <span className="font-mono text-white">ArkadiansDemo2026!</span>
+                </p>
+                <p className="text-white/55">
+                  CEO: executive dashboard, pipeline, prospects, activities, and construction — no admin tools,
+                  calls, calendar, or buyer tools. Run{" "}
+                  <span className="font-mono text-white/80">npm run db:seed</span> if ceo@ is missing.
+                </p>
               </div>
             </div>
           </div>

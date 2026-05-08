@@ -5,41 +5,14 @@ import { usePathname } from "next/navigation";
 import { ArkLogo } from "@/components/shared/ArkLogo";
 import type { SessionUser } from "@/lib/auth";
 import { LogoutButton } from "@/components/layout/LogoutButton";
-
-type NavItem = {
-  href: string;
-  label: string;
-};
-
-const coreNavItems: NavItem[] = [
-  { href: "/pipeline", label: "Pipeline" },
-  { href: "/pipeline/my-board", label: "My Board" },
-  { href: "/calendar", label: "Calendar" },
-  { href: "/leads", label: "Prospects" },
-  { href: "/calls", label: "Calls" },
-  { href: "/activities", label: "Activities" },
-  { href: "/game", label: "Buyer Game" },
-  { href: "/experience", label: "Buyer share link" },
-  { href: "/construction", label: "Construction" },
-  { href: "/settings", label: "Settings" },
-];
+import { navItemsForRole, type AppNavItem } from "@/lib/app-nav";
 
 export function Sidebar({ sessionUser }: { sessionUser: SessionUser | null }) {
   const pathname = usePathname();
-  const role = (sessionUser?.role ?? "").toLowerCase();
-  const isAdmin = role === "admin";
-  const isCeo = role === "ceo";
-  const items = isAdmin
-    ? [
-        { href: "/admin", label: "Arkadians Command Centre" },
-        { href: "/admin/users", label: "User Management" },
-        { href: "/inventory", label: "Inventory (Admin)" },
-        ...coreNavItems,
-      ]
-    : isCeo
-      ? [{ href: "/ceo", label: "CEO Profile" }, ...coreNavItems]
-      : coreNavItems;
-  const personalCommandCentre: NavItem = { href: "/", label: "Command Centre" };
+  const items = navItemsForRole(sessionUser?.role);
+  const personalCommandCentre: AppNavItem = { href: "/", label: "Command Centre" };
+  const isCeo = (sessionUser?.role ?? "").toLowerCase() === "ceo";
+  const showFooterCommandLink = !isCeo;
 
   return (
     <aside className="hidden lg:flex w-[280px] shrink-0 bg-white relative border-r border-light-grey">
@@ -59,11 +32,11 @@ export function Sidebar({ sessionUser }: { sessionUser: SessionUser | null }) {
         </div>
 
         <nav className="px-3 py-4 flex flex-col gap-1">
-          {items.map((item) => {
+          {items.map((item, index) => {
             const isActive = pathname === item.href;
             return (
               <Link
-                key={item.href}
+                key={`${item.href}-${item.label}-${index}`}
                 href={item.href}
                 aria-current={isActive ? "page" : undefined}
                 className={[
@@ -80,18 +53,20 @@ export function Sidebar({ sessionUser }: { sessionUser: SessionUser | null }) {
         </nav>
 
         <div className="mt-auto border-t border-light-grey p-4 space-y-3">
-          <Link
-            href={personalCommandCentre.href}
-            aria-current={pathname === personalCommandCentre.href ? "page" : undefined}
-            className={[
-              "h-12 w-full px-4 rounded-lg flex items-center text-sm tracking-wide transition-colors border border-transparent",
-              pathname === personalCommandCentre.href
-                ? "bg-cream text-navy border-light-grey border-l-[3px] border-l-gold pl-[13px]"
-                : "text-medium-grey hover:bg-cream hover:text-navy",
-            ].join(" ")}
-          >
-            {personalCommandCentre.label}
-          </Link>
+          {showFooterCommandLink ? (
+            <Link
+              href={personalCommandCentre.href}
+              aria-current={pathname === personalCommandCentre.href ? "page" : undefined}
+              className={[
+                "h-12 w-full px-4 rounded-lg flex items-center text-sm tracking-wide transition-colors border border-transparent",
+                pathname === personalCommandCentre.href
+                  ? "bg-cream text-navy border-light-grey border-l-[3px] border-l-gold pl-[13px]"
+                  : "text-medium-grey hover:bg-cream hover:text-navy",
+              ].join(" ")}
+            >
+              {personalCommandCentre.label}
+            </Link>
+          ) : null}
           <div className="rounded-xl bg-cream/60 border border-light-grey p-4">
             <div className="text-sm text-navy font-medium">{sessionUser?.name ?? "Guest"}</div>
             <div className="text-xs text-medium-grey mt-0.5">

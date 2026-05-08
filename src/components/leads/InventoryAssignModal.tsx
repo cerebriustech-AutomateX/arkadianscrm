@@ -1,9 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+const INVENTORY_SAVE_FLASH_KEY = "arkadians_inventory_saved_flash";
 
 function roleIsAdmin(role: string | null | undefined) {
   return (role ?? "").toLowerCase() === "admin";
+}
+
+function roleCanSignal(role: string | null | undefined) {
+  const r = (role ?? "").toLowerCase();
+  return r === "admin" || r === "manager" || r === "sales_rep";
 }
 
 type InventoryStatus =
@@ -14,89 +21,49 @@ type InventoryStatus =
   | "sold_assigned"
   | "available";
 
-type InventorySelectMessage = {
-  type: "arkadians_inventory_select";
-  unit?: {
-    id: string;
-    tower: string;
-    flatNumber: string;
-    type: string;
-    viewCategory: string;
-  };
+type InventorySelectPayload = {
+  id: string;
+  tower: string;
+  flatNumber: string;
+  type: string;
+  viewCategory: string;
+  notes?: string | null;
+  customerName?: string | null;
 };
 
-function stripInventoryLines(notes: string) {
-  const lines = notes.split(/\r?\n/);
-  const kept: string[] = [];
-
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line) continue;
-
-    const isInventoryLine =
-      /^flat\s+/i.test(line) ||
-      /^tower\s+/i.test(line) ||
-      /^type:\s*/i.test(line) ||
-      /^view:\s*/i.test(line) ||
-      /^client stage:\s*/i.test(line) ||
-      /^deposit:\s*/i.test(line) ||
-      /^instal+ment:\s*/i.test(line) ||
-      /^installment:\s*/i.test(line) ||
-      /^assigned flat\s+/i.test(line) ||
-      /^interest\/viewing logged for flat\s+/i.test(line);
-
-    if (!isInventoryLine) kept.push(raw);
-  }
-
-  return kept.join("\n").trim();
-}
-
-function buildInventoryBlock(args: {
-  status: Exclude<InventoryStatus, "available">;
-  flatNumber: string;
-  tower: string;
-  flatType: string;
-  viewCategory: string;
-}) {
-  const stage =
-    args.status === "sold_assigned"
-      ? "Sold / Assigned"
-      : args.status === "payment_secured"
-        ? "Payment secured"
-        : args.status === "deposit_secured"
-          ? "Deposit secured"
-          : args.status === "viewing"
-            ? "Viewing"
-            : "Interested";
-  const deposit = args.status === "deposit_secured" || args.status === "payment_secured" || args.status === "sold_assigned" ? "Deposit secured" : "Pending";
-  const instalment = args.status === "payment_secured" || args.status === "sold_assigned" ? "Instalment secured" : "Not started";
-
-  const bits = [
-    `Flat ${args.flatNumber}`,
-    args.tower ? `Tower ${args.tower}` : null,
-    args.flatType ? `Type: ${args.flatType}` : null,
-    args.viewCategory ? `View: ${args.viewCategory}` : null,
-    `Client stage: ${stage}`,
-    `Deposit: ${deposit}`,
-    `Instalment: ${instalment}`,
-  ].filter(Boolean);
-
-  return bits.join("\n");
-}
+type InventorySelectMessage =
+  | {
+      type: "arkadians_inventory_select";
+      unit?: InventorySelectPayload;
+    }
+  | {
+      type: "arkadians_inventory_assign";
+      unit?: InventorySelectPayload;
+      status?: InventoryStatus;
+    };
 
 export function InventoryAssignModal({
   leadId,
-  existingNotes,
   sessionRole,
 }: {
   leadId: string;
-  existingNotes: string | null;
   sessionRole: string | null;
 }) {
   const isAdmin = roleIsAdmin(sessionRole);
+  const canSignal = roleCanSignal(sessionRole);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof sessionStorage === "undefined") return;
+    const flash = sessionStorage.getItem(INVENTORY_SAVE_FLASH_KEY);
+    if (flash) {
+      setSuccessMsg(flash);
+      sessionStorage.removeItem(INVENTORY_SAVE_FLASH_KEY);
+    }
+  }, []);
 
   const [unitId, setUnitId] = useState<string | null>(null);
   const [flatNumber, setFlatNumber] = useState("");
@@ -104,75 +71,99 @@ export function InventoryAssignModal({
   const [flatType, setFlatType] = useState("");
   const [viewCategory, setViewCategory] = useState("");
   const [status, setStatus] = useState<InventoryStatus>("interested");
+  const [unitNotes, setUnitNotes] = useState("");
+
+  const unitIdRef = useRef<string | null>(null);
+  const statusRef = useRef<InventoryStatus>("interested");
+  const flatNumberRef = useRef("");
+  const unitNotesRef = useRef("");
+  const saveInnerRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
+    unitIdRef.current = unitId;
+    statusRef.current = status;
+    flatNumberRef.current = flatNumber;
+    unitNotesRef.current = unitNotes;
+  }, [unitId, status, flatNumber, unitNotes]);
+
+  useEffect(() => {
+    function applySelection(
+      unit: InventorySelectPayload,
+      nextStatus: InventoryStatus | null,
+      autoSave: boolean,
+    ) {
+      setSuccessMsg(null);
+      setUnitId(unit.id);
+      setFlatNumber(unit.flatNumber);
+      setTower(unit.tower);
+      setFlatType(unit.type);
+      setViewCategory(unit.viewCategory);
+      setUnitNotes(unit.notes?.trim() ? String(unit.notes) : "");
+      if (nextStatus) {
+        setStatus(nextStatus);
+      }
+
+      rootRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+      if (autoSave) {
+        setTimeout(() => {
+          void saveInnerRef.current();
+        }, 0);
+      }
+    }
+
     function onMessage(e: MessageEvent) {
       const data = e.data as InventorySelectMessage | null;
       if (!data || typeof data !== "object") return;
-      if (data.type !== "arkadians_inventory_select") return;
+      if (!canSignal) return;
       if (!data.unit) return;
-      if (!isAdmin) return;
-      setUnitId(data.unit.id);
-      setFlatNumber(data.unit.flatNumber);
-      setTower(data.unit.tower);
-      setFlatType(data.unit.type);
-      setViewCategory(data.unit.viewCategory);
 
-      // When user is scrolled down inside the inventory iframe,
-      // make the selected panel visible immediately.
-      rootRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (data.type === "arkadians_inventory_select") {
+        applySelection(data.unit, null, false);
+        return;
+      }
+
+      if (data.type === "arkadians_inventory_assign") {
+        const nextStatus = (data.status ?? "interested") as InventoryStatus;
+        applySelection(data.unit, nextStatus, true);
+      }
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [isAdmin]);
+  }, [canSignal]);
 
   const canSubmit = useMemo(() => {
     if (status === "available") return true;
     return flatNumber.trim().length > 0;
   }, [status, flatNumber]);
 
-  async function save() {
-    if (!canSubmit) return;
+  const save = useCallback(async () => {
+    const uid = unitIdRef.current;
+    const st = statusRef.current;
+    if (st !== "available" && !flatNumberRef.current.trim()) return;
+
     setSaving(true);
     setMsg(null);
+    setSuccessMsg(null);
     try {
-      if (unitId) {
-        await fetch("/api/inventory/assign", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "same-origin",
-          body: JSON.stringify({
-            leadId,
-            unitId,
-            status,
-            customerName: null,
-          }),
-        });
+      if (!uid) {
+        setMsg("Select a flat from the list first.");
+        return;
       }
 
-      const base = stripInventoryLines(existingNotes ?? "");
-      const next =
-        status === "available"
-          ? base
-          : [
-              base,
-              buildInventoryBlock({
-                status,
-                flatNumber: flatNumber.trim(),
-                tower: tower.trim(),
-                flatType: flatType.trim(),
-                viewCategory: viewCategory.trim(),
-              }),
-            ]
-              .filter((x) => x && x.trim().length > 0)
-              .join("\n\n")
-              .trim();
+      const notePayload = unitNotesRef.current.trim() || null;
 
-      const res = await fetch(`/api/leads/${leadId}`, {
-        method: "PATCH",
+      const res = await fetch("/api/inventory/assign", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ notes: next }),
+        body: JSON.stringify({
+          leadId,
+          unitId: uid,
+          status: st,
+          customerName: null,
+          notes: notePayload,
+        }),
       });
       const json: unknown = await res.json().catch(() => null);
       if (!res.ok) {
@@ -184,15 +175,28 @@ export function InventoryAssignModal({
         return;
       }
 
+      const okLabel =
+        st === "available"
+          ? "Removed flat from this lead. Inventory row updated."
+          : st === "viewing"
+            ? "Saved as Viewing. Profile and inventory list updated."
+            : "Saved as Interested. Profile and inventory list updated.";
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.setItem(INVENTORY_SAVE_FLASH_KEY, okLabel);
+      }
       window.location.reload();
     } catch {
       setMsg("Network error.");
     } finally {
       setSaving(false);
     }
-  }
+  }, [leadId]);
 
-  if (!isAdmin) return null;
+  useEffect(() => {
+    saveInnerRef.current = save;
+  }, [save]);
+
+  if (!canSignal) return null;
 
   const hasSelection = Boolean(unitId) && Boolean(flatNumber.trim());
 
@@ -203,7 +207,7 @@ export function InventoryAssignModal({
           <div className="text-xs tracking-[0.2em] uppercase text-medium-grey">Inventory assignment</div>
           <div className="mt-2 font-(--font-display) text-lg text-navy">Select a flat from the list</div>
           <p className="mt-2 text-sm text-medium-grey max-w-2xl">
-            Use the inventory table below and click <span className="font-semibold">Select</span>. Then assign the correct status here.
+            Select a flat below, set status and optional notes, then use <span className="font-semibold">Save</span> once — updates this lead and the flat row in the list.
           </p>
         </div>
         <button
@@ -215,7 +219,9 @@ export function InventoryAssignModal({
             setFlatType("");
             setViewCategory("");
             setStatus("interested");
+            setUnitNotes("");
             setMsg(null);
+            setSuccessMsg(null);
           }}
           className="h-10 rounded-lg border border-light-grey bg-white px-4 text-xs font-semibold tracking-[0.15em] uppercase text-navy hover:border-gold hover:bg-cream/40 transition-colors disabled:opacity-50"
           disabled={saving || !hasSelection}
@@ -247,14 +253,33 @@ export function InventoryAssignModal({
           >
             <option value="interested">Interested</option>
             <option value="viewing">Viewing</option>
-            <option value="deposit_secured">Deposit secured</option>
-            <option value="payment_secured">Payment / instalment secured</option>
-            <option value="sold_assigned">Sold / assigned</option>
+            {isAdmin ? (
+              <>
+                <option value="deposit_secured">Deposit secured</option>
+                <option value="payment_secured">Payment / instalment secured</option>
+                <option value="sold_assigned">Sold / assigned</option>
+              </>
+            ) : null}
             <option value="available">Remove from lead (back to available)</option>
           </select>
         </label>
       </div>
 
+      <label className="mt-5 block">
+        <div className="text-xs tracking-[0.2em] uppercase text-medium-grey">Notes for this flat (inventory list)</div>
+        <textarea
+          value={unitNotes}
+          onChange={(e) => setUnitNotes(e.target.value)}
+          disabled={saving || !hasSelection}
+          rows={4}
+          placeholder="Visible on the stock row for your team (e.g. callback agreed, viewing time…)"
+          className="mt-2 w-full rounded-lg border border-light-grey bg-white px-3 py-2 text-sm text-navy placeholder:text-medium-grey/80 focus:outline-none focus:ring-2 focus:ring-gold/40 disabled:opacity-60 resize-y min-h-[96px]"
+        />
+      </label>
+
+      {successMsg ? (
+        <div className="mt-4 rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">{successMsg}</div>
+      ) : null}
       {msg ? <div className="mt-4 text-sm text-warning">{msg}</div> : null}
 
       <div className="mt-5 flex items-center justify-end">
@@ -264,7 +289,7 @@ export function InventoryAssignModal({
           disabled={saving || !hasSelection}
           className="h-11 rounded-lg border border-navy/20 bg-navy px-5 text-xs font-semibold tracking-[0.2em] uppercase text-white hover:shadow-[0_4px_15px_rgba(10,22,40,0.22)] transition-shadow disabled:opacity-50"
         >
-          {saving ? "Saving…" : "Save status"}
+          {saving ? "Saving…" : "Save"}
         </button>
       </div>
     </div>

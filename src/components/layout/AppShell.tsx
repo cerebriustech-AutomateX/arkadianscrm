@@ -26,6 +26,7 @@ export function AppShell({
       <div className="flex-1 min-w-0 flex flex-col">
         <TopBar
           user={sessionUser ? { name: sessionUser.name, email: sessionUser.email } : null}
+          role={sessionUser?.role ?? null}
         />
         <main className="flex-1 min-w-0 overflow-y-auto bg-[#FAFAFA]">{children}</main>
       </div>

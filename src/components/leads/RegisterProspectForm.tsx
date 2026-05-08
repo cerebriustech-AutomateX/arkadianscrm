@@ -286,7 +286,7 @@ export function RegisterProspectForm() {
     ) : null;
 
   return (
-    <div className="max-w-[1440px]">
+    <div className="w-full max-w-none">
       <form onSubmit={guardForm} className="space-y-0" noValidate>
         {statusBanner}
 

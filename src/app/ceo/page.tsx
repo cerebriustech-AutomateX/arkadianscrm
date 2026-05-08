@@ -1,12 +1,23 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { formatPkrCrore, getLeadBudgetValuePkr } from "@/lib/admin-metrics";
+import { CeoExecutiveOverviewSurface } from "@/components/dashboard/ceo/CeoExecutiveOverviewSurface";
+import type { FunnelDatum } from "@/components/dashboard/CeoExecutiveFunnelChart";
+import type { PipelineCountsPlain } from "@/components/dashboard/ceo/CeoInteractiveCharts";
 
 function hasDatabase() {
   return Boolean(process.env.DATABASE_URL?.trim());
 }
+
+const STATUS_ROWS = [
+  { status: "new" as const, label: "New" },
+  { status: "contacted" as const, label: "Contacted" },
+  { status: "viewing_booked" as const, label: "Viewing booked" },
+  { status: "negotiating" as const, label: "Negotiating" },
+  { status: "closed_won" as const, label: "Won" },
+  { status: "closed_lost" as const, label: "Lost" },
+];
 
 export default async function CeoPage() {
   const session = await getSession();
@@ -17,7 +28,7 @@ export default async function CeoPage() {
   if (!hasDatabase()) {
     return (
       <div className="px-5 sm:px-8 py-8">
-        <div className="max-w-[1440px] mx-auto">
+        <div className="w-full max-w-none">
           <div className="rounded-xl border border-light-grey bg-white shadow-card p-6">
             <div className="font-(--font-display) text-lg text-navy">CEO Profile</div>
             <p className="mt-2 text-sm text-medium-grey">
@@ -30,58 +41,90 @@ export default async function CeoPage() {
     );
   }
 
-  const leads = await prisma.lead.findMany({
-    where: { deletedAt: null },
-    select: { status: true, score: true, budgetMin: true, budgetMax: true },
-    take: 1000,
-  });
+  const [totalProspects, hotProspects, statusGroups, budgetRows] = await Promise.all([
+    prisma.lead.count({ where: { deletedAt: null } }),
+    prisma.lead.count({ where: { deletedAt: null, score: { gte: 75 } } }),
+    prisma.lead.groupBy({
+      by: ["status"],
+      where: { deletedAt: null },
+      _count: { _all: true },
+    }),
+    prisma.lead.findMany({
+      where: { deletedAt: null },
+      select: { budgetMin: true, budgetMax: true },
+    }),
+  ]);
 
-  const totalProspects = leads.length;
-  const hotProspects = leads.filter((l) => l.score >= 75).length;
-  const viewingsBooked = leads.filter((l) => l.status === "viewing_booked").length;
-  const pipelineValuePkr = leads.reduce((acc, l) => acc + getLeadBudgetValuePkr({ budgetMin: l.budgetMin, budgetMax: l.budgetMax }), BigInt(0));
+  const statusCount = Object.fromEntries(statusGroups.map((g) => [g.status, g._count._all])) as Record<
+    string,
+    number
+  >;
+  const viewingsBooked = statusCount.viewing_booked ?? 0;
+  const closedWon = statusCount.closed_won ?? 0;
+  const closedLost = statusCount.closed_lost ?? 0;
+  const activePipeline =
+    (statusCount.new ?? 0) +
+    (statusCount.contacted ?? 0) +
+    (statusCount.viewing_booked ?? 0) +
+    (statusCount.negotiating ?? 0);
+
+  const pipelineValuePkr = budgetRows.reduce(
+    (acc, l) => acc + getLeadBudgetValuePkr({ budgetMin: l.budgetMin, budgetMax: l.budgetMax }),
+    BigInt(0),
+  );
   const projectedRevenuePkr = (pipelineValuePkr * BigInt(3)) / BigInt(100);
 
+  const decided = closedWon + closedLost;
+  const winRatePct = decided > 0 ? Math.round((closedWon / decided) * 1000) / 10 : null;
+
   const kpis = [
-    { title: "Total Prospects", value: String(totalProspects), badge: "Live registry" },
-    { title: "Hot Prospects", value: String(hotProspects), badge: "AI-qualified focus" },
-    { title: "Pipeline Value", value: formatPkrCrore(pipelineValuePkr), badge: "Overall" },
-    { title: "Projected Revenue", value: formatPkrCrore(projectedRevenuePkr), badge: "Projected" },
-    { title: "Viewings Booked", value: String(viewingsBooked), badge: "Active" },
+    { title: "Total prospects", value: String(totalProspects), badge: "Registry" },
+    { title: "Active pipeline", value: String(activePipeline), badge: "Open stages" },
+    { title: "Hot prospects", value: String(hotProspects), badge: "Score 75+" },
+    { title: "Pipeline value", value: formatPkrCrore(pipelineValuePkr), badge: "Est. budgets" },
+    { title: "Viewings booked", value: String(viewingsBooked), badge: "Stage" },
+    { title: "Won / Lost", value: `${closedWon} / ${closedLost}`, badge: winRatePct != null ? `Win rate ${winRatePct}%` : "Outcomes" },
   ];
+
+  const funnelData: FunnelDatum[] = [
+    { stage: "New", count: statusCount.new ?? 0 },
+    { stage: "Contacted", count: statusCount.contacted ?? 0 },
+    { stage: "Viewing", count: statusCount.viewing_booked ?? 0 },
+    { stage: "Negotiating", count: statusCount.negotiating ?? 0 },
+    { stage: "Won", count: statusCount.closed_won ?? 0 },
+    { stage: "Lost", count: statusCount.closed_lost ?? 0 },
+  ];
+
+  const pipelineCountsPlain: PipelineCountsPlain = {
+    new: statusCount.new ?? 0,
+    contacted: statusCount.contacted ?? 0,
+    viewing_booked: statusCount.viewing_booked ?? 0,
+    negotiating: statusCount.negotiating ?? 0,
+    closed_won: statusCount.closed_won ?? 0,
+    closed_lost: statusCount.closed_lost ?? 0,
+  };
+
+  const statusTiles = STATUS_ROWS.map(({ status, label }) => ({
+    status,
+    label,
+    count: statusCount[status] ?? 0,
+    warn: status === "closed_lost",
+  }));
 
   return (
     <div className="px-5 sm:px-8 py-8">
-      <div className="max-w-[1440px] mx-auto">
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6">
-          <div>
-            <div className="text-xs tracking-[0.2em] uppercase text-medium-grey">Profile</div>
-            <h1 className="mt-2 font-(--font-display) text-3xl sm:text-4xl text-navy tracking-tight">
-              CEO Profile
-            </h1>
-            <p className="mt-2 text-medium-grey max-w-2xl">
-              {session.name} · {session.email}
-            </p>
-          </div>
-          <Link
-            href="/pipeline"
-            className="rounded px-5 py-3 text-xs font-semibold tracking-[0.2em] uppercase text-white bg-[linear-gradient(135deg,#0A1628,#1a2c4e)] hover:shadow-[0_4px_15px_rgba(10,22,40,0.30)] transition-shadow inline-block text-center"
-          >
-            View overall pipeline
-          </Link>
-        </div>
-
-        <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          {kpis.map((k) => (
-            <div key={k.title} className="rounded-xl border border-light-grey bg-white shadow-card p-5">
-              <div className="text-xs tracking-[0.2em] uppercase text-medium-grey">{k.title}</div>
-              <div className="mt-2 text-2xl font-semibold text-navy">{k.value}</div>
-              <div className="mt-2 text-xs text-medium-grey">{k.badge}</div>
-            </div>
-          ))}
-        </div>
+      <div className="w-full max-w-none">
+        <CeoExecutiveOverviewSurface
+          name={session.name}
+          email={session.email}
+          kpis={kpis}
+          funnelData={funnelData}
+          pipelineCounts={pipelineCountsPlain}
+          winRatePct={winRatePct}
+          projectedRevenueLabel={formatPkrCrore(projectedRevenuePkr)}
+          statusTiles={statusTiles}
+        />
       </div>
     </div>
   );
 }
-

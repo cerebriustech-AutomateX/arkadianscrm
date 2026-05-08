@@ -169,7 +169,10 @@ export async function GET(req: Request) {
     leadId: u.leadId,
   }));
 
-  return NextResponse.json({ data });
+  return NextResponse.json({
+    data,
+    meta: { scope: effectiveScope, role: (session.role ?? "").toLowerCase() },
+  });
 }
 
 export async function POST(req: Request) {
@@ -183,6 +186,7 @@ export async function POST(req: Request) {
   const session = await getSession();
   const isAdmin = roleIsAdmin(session?.role);
   if (!session || !isAdmin) {
+    console.warn("POST /api/inventory/units -> forbidden", { hasSession: Boolean(session), role: session?.role });
     return NextResponse.json(
       { error: { code: "FORBIDDEN", message: "Admin access required." } },
       { status: 403 },
@@ -192,13 +196,30 @@ export async function POST(req: Request) {
   const json = await req.json().catch(() => null);
   const parsed = upsertBodySchema.safeParse(json);
   if (!parsed.success) {
+    console.warn("POST /api/inventory/units -> bad request", {
+      issues: parsed.error.issues,
+      bodyType: json ? typeof json : null,
+    });
     return NextResponse.json(
-      { error: { code: "BAD_REQUEST", message: "Invalid inventory payload." } },
+      {
+        error: {
+          code: "BAD_REQUEST",
+          message: "Invalid inventory payload.",
+          details: process.env.NODE_ENV === "production" ? undefined : parsed.error.issues,
+        },
+      },
       { status: 400 },
     );
   }
 
   const body = parsed.data;
+  console.log("POST /api/inventory/units -> saving", {
+    id: body.id ?? null,
+    flatNumber: body.flatNumber,
+    tower: body.tower,
+    status: body.status,
+    leadId: body.leadId ?? null,
+  });
   const data = {
     tower: body.tower,
     flatNumber: body.flatNumber,
@@ -215,28 +236,37 @@ export async function POST(req: Request) {
 
   // If id is provided, update that row. Otherwise upsert by unique flatNumber
   // to prevent duplicates and make "Save Flat" idempotent.
-  const saved = body.id
-    ? await prisma.inventoryUnit.update({ where: { id: body.id }, data })
-    : await prisma.inventoryUnit.upsert({
-        where: { flatNumber: body.flatNumber },
-        update: data,
-        create: data,
-      });
+  try {
+    const saved = body.id
+      ? await prisma.inventoryUnit.update({ where: { id: body.id }, data })
+      : await prisma.inventoryUnit.upsert({
+          where: { flatNumber: body.flatNumber },
+          update: data,
+          create: data,
+        });
 
-  return NextResponse.json({
-    data: {
-      id: saved.id,
-      tower: saved.tower,
-      flatNumber: saved.flatNumber,
-      sizeSqft: saved.sizeSqft,
-      type: saved.type,
-      viewCategory: saved.viewCategory,
-      price: saved.price.toString(),
-      status: saved.status,
-      customerName: saved.customerName,
-      notes: saved.notes,
-      leadId: saved.leadId,
-    },
-  });
+    console.log("POST /api/inventory/units -> saved", { id: saved.id });
+    return NextResponse.json({
+      data: {
+        id: saved.id,
+        tower: saved.tower,
+        flatNumber: saved.flatNumber,
+        sizeSqft: saved.sizeSqft,
+        type: saved.type,
+        viewCategory: saved.viewCategory,
+        price: saved.price.toString(),
+        status: saved.status,
+        customerName: saved.customerName,
+        notes: saved.notes,
+        leadId: saved.leadId,
+      },
+    });
+  } catch (e) {
+    console.error("POST /api/inventory/units -> prisma error", e);
+    return NextResponse.json(
+      { error: { code: "SERVER_ERROR", message: "Could not save inventory unit." } },
+      { status: 500 },
+    );
+  }
 }
 

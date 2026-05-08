@@ -18,27 +18,61 @@ const EMPTY: InventoryTracking = {
   instalmentStatus: "Not started",
 };
 
+/** Parse structured inventory lines appended to lead notes (see buildInventoryBlock in assign route). */
 export function parseInventoryTracking(notes: string | null | undefined): InventoryTracking {
   const text = (notes ?? "").trim();
   if (!text) return EMPTY;
 
-  const normalized = text.replace(/\s+/g, " ");
+  const lines = text.split(/\r?\n/).map((l) => l.trim());
 
-  const flatNumber =
-    normalized.match(/Flat\s+([A-Za-z0-9-]+)/i)?.[1] ??
-    normalized.match(/flat\s+([A-Za-z0-9-]+)/i)?.[1] ??
-    null;
-  const tower = normalized.match(/Tower\s+([A-Za-z0-9-]+)/i)?.[1] ?? null;
-  const flatType = normalized.match(/Type:\s*([^·\n]+)/i)?.[1]?.trim() ?? null;
-  const viewCategory = normalized.match(/View:\s*([^·\n]+)/i)?.[1]?.trim() ?? null;
-  const clientStage = normalized.match(/Client stage:\s*([^·\n]+)/i)?.[1]?.trim() ?? null;
-  const deposit = normalized.match(/Deposit:\s*([^·\n]+)/i)?.[1]?.trim() ?? null;
-  const instalment =
-    normalized.match(/Instalment:\s*([^·\n]+)/i)?.[1]?.trim() ??
-    normalized.match(/Installment:\s*([^·\n]+)/i)?.[1]?.trim() ??
-    null;
+  let flatNumber: string | null = null;
+  let tower: string | null = null;
+  let flatType: string | null = null;
+  let viewCategory: string | null = null;
+  let clientStage: string | null = null;
+  let deposit: string | null = null;
+  let instalment: string | null = null;
 
-  // Backward compatibility with previous inventory note lines
+  for (const line of lines) {
+    if (!line) continue;
+    const flatM = line.match(/^Flat\s+([A-Za-z0-9-]+)\s*$/i);
+    if (flatM) {
+      flatNumber = flatM[1] ?? null;
+      continue;
+    }
+    const towerM = line.match(/^Tower\s+(.+)$/i);
+    if (towerM) {
+      tower = towerM[1]?.trim() ?? null;
+      continue;
+    }
+    const typeM = line.match(/^Type:\s*(.+)$/i);
+    if (typeM) {
+      flatType = typeM[1]?.trim() ?? null;
+      continue;
+    }
+    const viewM = line.match(/^View:\s*(.+)$/i);
+    if (viewM) {
+      viewCategory = viewM[1]?.trim() ?? null;
+      continue;
+    }
+    const stageM = line.match(/^Client stage:\s*(.+)$/i);
+    if (stageM) {
+      clientStage = stageM[1]?.trim() ?? null;
+      continue;
+    }
+    const depM = line.match(/^Deposit:\s*(.+)$/i);
+    if (depM) {
+      deposit = depM[1]?.trim() ?? null;
+      continue;
+    }
+    const instM = line.match(/^Instalment:\s*(.+)$/i) ?? line.match(/^Installment:\s*(.+)$/i);
+    if (instM) {
+      instalment = instM[1]?.trim() ?? null;
+      continue;
+    }
+  }
+
+  // Backward compatibility: older single-line formats
   if (!flatNumber && !clientStage) {
     const assignedMatch = text.match(/Assigned flat\s+([A-Za-z0-9-]+)/i);
     if (assignedMatch) {
@@ -66,6 +100,12 @@ export function parseInventoryTracking(notes: string | null | undefined): Invent
     }
   }
 
+  // Loose match if block got pasted on one line (avoid greedy Type:/View: regex bugs)
+  if (!flatNumber) {
+    const oneLineFlat = text.match(/\bFlat\s+([A-Za-z0-9-]+)\b/i)?.[1] ?? null;
+    flatNumber = oneLineFlat;
+  }
+
   if (!flatNumber && !flatType && !viewCategory && !clientStage && !deposit && !instalment) {
     return EMPTY;
   }
@@ -80,4 +120,3 @@ export function parseInventoryTracking(notes: string | null | undefined): Invent
     instalmentStatus: instalment ?? "Not started",
   };
 }
-

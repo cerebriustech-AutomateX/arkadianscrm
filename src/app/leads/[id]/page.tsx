@@ -34,6 +34,11 @@ function unitLabel(u: string | undefined) {
   return u.includes("_") ? u.replaceAll("_", " ") : u;
 }
 
+function inventoryScope(role: string | null | undefined) {
+  const r = (role ?? "").toLowerCase();
+  return r === "admin" ? "admin" : "user";
+}
+
 export default async function LeadDetailPage({
   params,
 }: {
@@ -51,7 +56,7 @@ export default async function LeadDetailPage({
   if (!lead) {
     return (
       <div className="px-5 sm:px-8 py-8">
-        <div className="max-w-[1440px] mx-auto">
+        <div className="w-full max-w-none">
           <Link
             href="/pipeline"
             className="text-sm font-medium text-medium-grey hover:text-navy transition-colors"
@@ -198,7 +203,7 @@ async function LeadDetailContent({
 
   return (
     <div className="px-5 sm:px-8 py-8">
-      <div className="max-w-[1440px] mx-auto">
+      <div className="w-full max-w-none">
         <Link
           href="/pipeline"
           className="inline-flex items-center gap-2 text-sm font-medium text-medium-grey hover:text-navy transition-colors"
@@ -330,7 +335,9 @@ async function LeadDetailContent({
                   ["Preferred unit", unitLabel(lead.preferredUnit)],
                   ["Preferred view", lead.preferredView ? `${unitLabel(lead.preferredView)} view` : "—"],
                   ["Interested flat", inventoryTracking.flatNumber ?? "—"],
+                  ["Inventory tower", inventoryTracking.tower ?? "—"],
                   ["Flat type", inventoryTracking.flatType ?? "—"],
+                  ["Inventory view", inventoryTracking.viewCategory ?? "—"],
                   ["Inventory stage", inventoryTracking.clientStage],
                   ["Deposit status", inventoryTracking.depositStatus],
                   ["Instalment status", inventoryTracking.instalmentStatus],
@@ -350,19 +357,18 @@ async function LeadDetailContent({
               <div className="p-6">
                 <h2 className="font-(--font-display) text-lg text-navy">Available inventory</h2>
                 <p className="mt-2 text-sm text-medium-grey max-w-2xl">
-                  Browse inventory here. Admins can select a flat from the table and assign a status for this lead.
+                  Browse inventory here. Select a flat from the table and assign a status for this lead.
                 </p>
               </div>
               <div className="px-6 pb-6">
                 <InventoryAssignModal
                   leadId={lead.id}
-                  existingNotes={lead.notes ?? null}
                   sessionRole={sessionRole}
                 />
               </div>
               <iframe
                 title="Arkadians Inventory (Available)"
-                src={`/inventory/index.html?scope=admin&select=1&leadId=${encodeURIComponent(lead.id)}`}
+                src={`/inventory/index.html?scope=${encodeURIComponent(inventoryScope(sessionRole))}&select=1&leadId=${encodeURIComponent(lead.id)}&v=3`}
                 className="w-full min-h-[70vh]"
               />
             </section>
@@ -456,6 +462,10 @@ async function LeadDetailContent({
               {[
                 ["Stage", progress.stage],
                 ["Payment status", progress.paymentStatus],
+                ["Interested flat", inventoryTracking.flatNumber ?? "—"],
+                ["Inventory tower", inventoryTracking.tower ?? "—"],
+                ["Flat type", inventoryTracking.flatType ?? "—"],
+                ["Inventory view", inventoryTracking.viewCategory ?? "—"],
                 ["Inventory stage", inventoryTracking.clientStage],
                 ["Assigned advisor", lead.ownerLabel ?? "Unassigned"],
                 ["Estimated value", lead.budgetLabel],

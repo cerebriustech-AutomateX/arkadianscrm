@@ -1,6 +1,13 @@
+import { redirect } from "next/navigation";
+import { getSession } from "@/lib/auth";
+import { redirectCeoFromAdvisorRoute } from "@/lib/redirect-ceo-from-advisor-routes";
 import { ExperienceClient } from "@/components/experience/ExperienceClient";
 
-export default function ExperiencePage() {
+export default async function ExperiencePage() {
+  const session = await getSession();
+  if (!session) redirect(`/login?from=${encodeURIComponent("/experience")}`);
+  redirectCeoFromAdvisorRoute(session.role);
+
   return (
     <div className="min-h-full bg-cream px-5 sm:px-8 py-10">
       <div className="max-w-[980px] mx-auto">

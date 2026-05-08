@@ -1,10 +1,17 @@
+import { redirect } from "next/navigation";
+import { getSession } from "@/lib/auth";
+import { redirectCeoFromAdvisorRoute } from "@/lib/redirect-ceo-from-advisor-routes";
 import { ResidenceSelector } from "@/components/game/ResidenceSelector";
 import { BuyerShareUrls } from "@/components/experience/BuyerShareUrls";
 
-export default function GamePage() {
+export default async function GamePage() {
+  const session = await getSession();
+  if (!session) redirect(`/login?from=${encodeURIComponent("/game")}`);
+  redirectCeoFromAdvisorRoute(session.role);
+
   return (
     <div className="px-5 sm:px-8 py-8">
-      <div className="max-w-[1440px] mx-auto">
+      <div className="w-full max-w-none">
         <div className="flex items-end justify-between gap-6">
           <div>
           <h1 className="font-(--font-display) text-3xl sm:text-4xl text-navy tracking-tight">

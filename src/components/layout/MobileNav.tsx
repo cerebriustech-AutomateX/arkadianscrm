@@ -3,33 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { SessionUser } from "@/lib/auth";
+import { navItemsForRole, type AppNavItem } from "@/lib/app-nav";
 
-type NavItem = { href: string; label: string };
-
-const coreNavItems: NavItem[] = [
-  { href: "/pipeline", label: "Pipeline" },
-  { href: "/pipeline/my-board", label: "My Board" },
-  { href: "/calendar", label: "Calendar" },
-  { href: "/leads", label: "Prospects" },
-  { href: "/calls", label: "Calls" },
-  { href: "/activities", label: "Activities" },
-  { href: "/game", label: "Buyer Game" },
-  { href: "/experience", label: "Buyer share link" },
-  { href: "/construction", label: "Construction" },
-  { href: "/settings", label: "Settings" },
-];
-const personalCommandCentre: NavItem = { href: "/", label: "Command Centre" };
+const personalCommandCentre: AppNavItem = { href: "/", label: "Command Centre" };
 
 export function MobileNav({ sessionUser }: { sessionUser: SessionUser | null }) {
   const [open, setOpen] = useState(false);
-  const isAdmin = (sessionUser?.role ?? "").toLowerCase() === "admin";
-  const items = isAdmin
-    ? [
-        { href: "/admin", label: "Arkadians Command Centre" },
-        { href: "/inventory", label: "Inventory (Admin)" },
-        ...coreNavItems,
-      ]
-    : coreNavItems;
+  const items = navItemsForRole(sessionUser?.role);
+  const isCeo = (sessionUser?.role ?? "").toLowerCase() === "ceo";
 
   return (
     <div className="lg:hidden">
@@ -67,9 +48,9 @@ export function MobileNav({ sessionUser }: { sessionUser: SessionUser | null }) 
             </div>
 
             <nav className="px-3 py-4 flex flex-col gap-1">
-              {items.map((item) => (
+              {items.map((item, index) => (
                 <Link
-                  key={item.href}
+                  key={`${item.href}-${item.label}-${index}`}
                   href={item.href}
                   className="h-12 px-4 rounded-md flex items-center text-sm tracking-wide text-white/80 hover:bg-navy-light hover:text-white transition-colors"
                   onClick={() => setOpen(false)}
@@ -78,15 +59,17 @@ export function MobileNav({ sessionUser }: { sessionUser: SessionUser | null }) 
                 </Link>
               ))}
 
-              <div className="mt-3 pt-3 border-t border-navy-light/70">
-                <Link
-                  href={personalCommandCentre.href}
-                  className="h-12 px-4 rounded-md flex items-center text-sm tracking-wide text-white/80 hover:bg-navy-light hover:text-white transition-colors"
-                  onClick={() => setOpen(false)}
-                >
-                  {personalCommandCentre.label}
-                </Link>
-              </div>
+              {!isCeo ? (
+                <div className="mt-3 pt-3 border-t border-navy-light/70">
+                  <Link
+                    href={personalCommandCentre.href}
+                    className="h-12 px-4 rounded-md flex items-center text-sm tracking-wide text-white/80 hover:bg-navy-light hover:text-white transition-colors"
+                    onClick={() => setOpen(false)}
+                  >
+                    {personalCommandCentre.label}
+                  </Link>
+                </div>
+              ) : null}
             </nav>
           </div>
         </div>

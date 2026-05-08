@@ -11,6 +11,69 @@ function roleIsAdmin(role: string | null | undefined) {
   return (role ?? "").toLowerCase() === "admin";
 }
 
+function roleCanSignal(role: string | null | undefined) {
+  const r = (role ?? "").toLowerCase();
+  return r === "admin" || r === "manager" || r === "sales_rep";
+}
+
+function stripInventoryLines(notes: string) {
+  const lines = notes.split(/\r?\n/);
+  const kept: string[] = [];
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    const isInventoryLine =
+      /^flat\s+/i.test(line) ||
+      /^tower\s+/i.test(line) ||
+      /^type:\s*/i.test(line) ||
+      /^view:\s*/i.test(line) ||
+      /^client stage:\s*/i.test(line) ||
+      /^deposit:\s*/i.test(line) ||
+      /^instal+ment:\s*/i.test(line) ||
+      /^installment:\s*/i.test(line) ||
+      /^assigned flat\s+/i.test(line) ||
+      /^interest\/viewing logged for flat\s+/i.test(line);
+    if (!isInventoryLine) kept.push(raw);
+  }
+  return kept.join("\n").trim();
+}
+
+function buildInventoryBlock(args: {
+  status: "interested" | "viewing" | "deposit_secured" | "payment_secured" | "sold_assigned";
+  flatNumber: string;
+  tower: string;
+  flatType: string;
+  viewCategory: string;
+}) {
+  const stage =
+    args.status === "sold_assigned"
+      ? "Sold / Assigned"
+      : args.status === "payment_secured"
+        ? "Payment secured"
+        : args.status === "deposit_secured"
+          ? "Deposit secured"
+          : args.status === "viewing"
+            ? "Viewing"
+            : "Interested";
+  const deposit =
+    args.status === "deposit_secured" || args.status === "payment_secured" || args.status === "sold_assigned"
+      ? "Deposit secured"
+      : "Pending";
+  const instalment = args.status === "payment_secured" || args.status === "sold_assigned" ? "Instalment secured" : "Not started";
+
+  const bits = [
+    `Flat ${args.flatNumber}`,
+    args.tower ? `Tower ${args.tower}` : null,
+    args.flatType ? `Type: ${args.flatType}` : null,
+    args.viewCategory ? `View: ${args.viewCategory}` : null,
+    `Client stage: ${stage}`,
+    `Deposit: ${deposit}`,
+    `Instalment: ${instalment}`,
+  ].filter(Boolean);
+
+  return bits.join("\n");
+}
+
 const bodySchema = z.object({
   leadId: z.string().uuid(),
   unitId: z.string().uuid(),
@@ -35,9 +98,9 @@ export async function POST(req: Request) {
   }
 
   const session = await getSession();
-  if (!session || !roleIsAdmin(session.role)) {
+  if (!session || !roleCanSignal(session.role)) {
     return NextResponse.json(
-      { error: { code: "FORBIDDEN", message: "Admin access required." } },
+      { error: { code: "FORBIDDEN", message: "Sign in required." } },
       { status: 403 },
     );
   }
@@ -56,7 +119,7 @@ export async function POST(req: Request) {
   try {
     const lead = await prisma.lead.findFirst({
       where: { id: leadId, deletedAt: null },
-      select: { id: true, name: true },
+      select: { id: true, name: true, ownerId: true, notes: true },
     });
     if (!lead) {
       return NextResponse.json(
@@ -65,9 +128,36 @@ export async function POST(req: Request) {
       );
     }
 
+    const sessionRole = (session.role ?? "").toLowerCase();
+    const isAdmin = sessionRole === "admin";
+    const isManager = sessionRole === "manager";
+    const isSalesRep = sessionRole === "sales_rep";
+    const isSales = isManager || isSalesRep;
+    if (isSales) {
+      // Sales can only signal "interested"/"viewing" (or clear to available),
+      // and sales reps only on their own or unassigned leads; managers can assist any lead.
+      if (!["available", "interested", "viewing"].includes(status)) {
+        return NextResponse.json(
+          { error: { code: "FORBIDDEN", message: "Only admin can set deposit/payment/sold statuses." } },
+          { status: 403 },
+        );
+      }
+      if (isSalesRep && lead.ownerId && lead.ownerId !== session.userId) {
+        return NextResponse.json(
+          {
+            error: {
+              code: "FORBIDDEN",
+              message: "You can only update inventory for leads assigned to you or unassigned leads.",
+            },
+          },
+          { status: 403 },
+        );
+      }
+    }
+
     const unit = await prisma.inventoryUnit.findFirst({
       where: { id: unitId },
-      select: { id: true, flatNumber: true, tower: true, type: true, viewCategory: true },
+      select: { id: true, flatNumber: true, tower: true, type: true, viewCategory: true, status: true },
     });
     if (!unit) {
       return NextResponse.json(
@@ -76,7 +166,35 @@ export async function POST(req: Request) {
       );
     }
 
+    if (isSales) {
+      // Hard-lock statuses cannot be selected/changed by sales team.
+      if (["deposit_secured", "payment_secured", "sold_assigned"].includes(unit.status)) {
+        return NextResponse.json(
+          { error: { code: "FORBIDDEN", message: "This flat is locked (deposit/payment/sold) and cannot be changed." } },
+          { status: 403 },
+        );
+      }
+    }
+
     const effectiveCustomerName = (customerName ?? "").trim() || lead.name;
+
+    const base = stripInventoryLines(lead.notes ?? "");
+    const nextNotes =
+      status === "available"
+        ? base
+        : [
+            base,
+            buildInventoryBlock({
+              status: status as "interested" | "viewing" | "deposit_secured" | "payment_secured" | "sold_assigned",
+              flatNumber: unit.flatNumber,
+              tower: unit.tower,
+              flatType: unit.type,
+              viewCategory: unit.viewCategory,
+            }),
+          ]
+            .filter((x) => x && x.trim().length > 0)
+            .join("\n\n")
+            .trim();
 
     // Enforce single flat per lead for now: unassign any other units linked to this lead.
     await prisma.$transaction([
@@ -90,9 +208,14 @@ export async function POST(req: Request) {
           leadId: status === "available" ? null : leadId,
           status,
           customerName: status === "available" ? null : effectiveCustomerName,
-          notes: notes ?? undefined,
+          // Preserve existing notes when the client omits the field; allow explicit null to clear.
+          ...(notes !== undefined ? { notes } : {}),
           statusAt: new Date(),
         },
+      }),
+      prisma.lead.update({
+        where: { id: leadId },
+        data: { notes: nextNotes },
       }),
     ]);
 

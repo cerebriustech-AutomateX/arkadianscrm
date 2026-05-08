@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { redirectCeoFromAdvisorRoute } from "@/lib/redirect-ceo-from-advisor-routes";
 import { formatDateOnly, formatDateTime } from "@/lib/datetime";
 import { MonthlyCalendarGrid } from "@/components/calendar/MonthlyCalendarGrid";
 
@@ -66,6 +67,7 @@ export default async function CalendarPage({
 }) {
   const session = await getSession();
   if (!session) redirect(`/login?from=${encodeURIComponent("/calendar")}`);
+  redirectCeoFromAdvisorRoute(session.role);
 
   const isAdmin = (session.role ?? "").toLowerCase() === "admin";
   const sp = await searchParams;
@@ -76,7 +78,7 @@ export default async function CalendarPage({
   if (!hasDatabase()) {
     return (
       <div className="px-5 sm:px-8 py-8">
-        <div className="max-w-[1440px] mx-auto">
+        <div className="w-full max-w-none">
           <div className="rounded-xl border border-light-grey bg-white shadow-card p-6">
             <div className="font-(--font-display) text-lg text-navy">Calendar</div>
             <p className="mt-2 text-sm text-medium-grey">Database is not configured.</p>
@@ -154,7 +156,7 @@ export default async function CalendarPage({
 
   return (
     <div className="px-5 sm:px-8 py-8">
-      <div className="max-w-[1440px] mx-auto">
+      <div className="w-full max-w-none">
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6">
           <div>
             <h1 className="font-(--font-display) text-3xl sm:text-4xl text-navy tracking-tight">Calendar</h1>

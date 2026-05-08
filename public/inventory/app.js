@@ -1,6 +1,6 @@
 const query = new URLSearchParams(window.location.search);
 const scopeRaw = (query.get("scope") || "").toLowerCase();
-const scope = scopeRaw === "admin" ? "admin" : "user";
+let scope = scopeRaw === "admin" ? "admin" : "user";
 const isSelectMode = query.get("select") === "1";
 const leadId = query.get("leadId") || "";
 
@@ -22,6 +22,8 @@ const ADMIN_STATUSES = [
   "payment_secured",
   "sold_assigned"
 ];
+
+const HARD_LOCK_STATUSES = ["deposit_secured", "payment_secured", "sold_assigned"];
 
 const unitForm = document.getElementById("unitForm");
 const resetBtn = document.getElementById("resetBtn");
@@ -70,12 +72,18 @@ async function apiGetUnits() {
   }
   const json = await res.json().catch(() => null);
   const data = json && typeof json === "object" && "data" in json ? json.data : null;
+  const meta = json && typeof json === "object" && "meta" in json ? json.meta : null;
+  if (meta && typeof meta === "object" && meta.scope) {
+    const nextScope = String(meta.scope).toLowerCase();
+    scope = nextScope === "admin" ? "admin" : "user";
+  }
   return Array.isArray(data) ? data : [];
 }
 
 async function apiUpsertUnit(payload) {
   lastError = "";
   lastSuccess = "";
+  console.log("[inventory] Save Flat -> POST /api/inventory/units", payload);
   const res = await fetch("/api/inventory/units", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -91,11 +99,16 @@ async function apiUpsertUnit(payload) {
     try {
       const json = await res?.json();
       msg = json && json.error && json.error.message ? String(json.error.message) : "";
+      if (json && json.error && json.error.details) {
+        msg = `${msg} ${JSON.stringify(json.error.details)}`.trim();
+      }
     } catch {}
     lastError = msg || `Could not save (HTTP ${res ? res.status : "?"}).`;
+    console.error("[inventory] Save Flat failed", lastError);
     return false;
   }
   lastSuccess = "Saved.";
+  console.log("[inventory] Save Flat success");
   return true;
 }
 
@@ -110,7 +123,10 @@ function getFormData() {
     price: Number(document.getElementById("price").value),
     status: document.getElementById("status").value,
     customerName: document.getElementById("customerName").value.trim(),
-    notes: document.getElementById("notes").value.trim()
+    notes: document.getElementById("notes").value.trim(),
+    // When inventory is opened from a lead page, persist the relationship
+    // so the unit row reflects the lead assignment context.
+    leadId: isSelectMode && leadId ? leadId : null
   };
 }
 
@@ -132,28 +148,47 @@ function populateForm(unit) {
   document.getElementById("notes").value = unit.notes || "";
 }
 
+function embeddedLeadFlow() {
+  return isSelectMode && Boolean(leadId);
+}
+
+function setEditorPanelVisibility() {
+  if (!editorPanel) return;
+  // On a lead profile we only browse + Select; saving happens in the parent panel (single Save).
+  if (embeddedLeadFlow()) {
+    editorPanel.style.display = "none";
+    return;
+  }
+  editorPanel.style.display = scope === "admin" ? "" : "none";
+}
+
 function renderPermissionsNotice() {
   permissionsNotice.classList.add("notice");
   const err = lastError ? `<div style="margin-top:8px;color:#991b1b;font-size:13px;"><strong>Error:</strong> ${lastError}</div>` : "";
   const ok = lastSuccess ? `<div style="margin-top:8px;color:#166534;font-size:13px;"><strong>Success:</strong> ${lastSuccess}</div>` : "";
+  const leadHint = embeddedLeadFlow()
+    ? `<p style="margin-top:8px;"><strong>Lead workflow:</strong> use <strong>Select</strong> on a row, then save status and notes in the panel above the table.</p>`
+    : "";
   if (scope === "admin") {
     permissionsNotice.innerHTML = `
       <h2>Administrator Access</h2>
       <p>Full stock visibility: Available, Interested, Viewing, Deposit Secured, Payment Secured, Sold/Assigned.</p>
+      ${leadHint}
       ${err}
       ${ok}
     `;
-    if (editorPanel) editorPanel.style.display = "";
+    setEditorPanelVisibility();
     return;
   }
 
   permissionsNotice.innerHTML = `
     <h2>User Access</h2>
     <p>You can browse inventory signals that remain market-available: Available, Interested, Viewing.</p>
+    ${leadHint}
     ${err}
     ${ok}
   `;
-  if (editorPanel) editorPanel.style.display = "none";
+  setEditorPanelVisibility();
 }
 
 function renderSummaryCards(units) {
@@ -238,14 +273,20 @@ function sortUnitsForDisplay(units) {
 }
 
 function actionButtons(unit) {
+  const canSelect = isSelectMode && leadId;
+  const hideEditOnLead = embeddedLeadFlow();
   if (scope !== "admin") {
-    return '<span class="text-muted">View only</span>';
+    const softSelectable = USER_STATUSES.includes(unit.status);
+    return canSelect && softSelectable
+      ? `<div class="row-actions"><button type="button" data-action="select" data-id="${unit.id}">Select</button></div>`
+      : '<span class="text-muted">View only</span>';
   }
 
-  const selectBtn = isSelectMode ? `<button type="button" data-action="select" data-id="${unit.id}">Select</button>` : "";
+  const selectBtn = canSelect ? `<button type="button" data-action="select" data-id="${unit.id}">Select</button>` : "";
+  const editBtn = hideEditOnLead ? "" : `<button type="button" data-action="edit" data-id="${unit.id}">Edit</button>`;
   return `<div class="row-actions">
     ${selectBtn}
-    <button type="button" data-action="edit" data-id="${unit.id}">Edit</button>
+    ${editBtn}
   </div>`;
 }
 
@@ -271,7 +312,7 @@ function renderTable(units) {
         <td>${Number(u.price || 0).toLocaleString()}</td>
         <td><span class="status status-${u.status}">${STATUS_LABEL[u.status] || u.status}</span></td>
         <td>${u.customerName || "-"}</td>
-        <td title="${String(u.notes || "").replaceAll('"', "&quot;")}">${u.notes ? String(u.notes).slice(0, 60) : "-"}</td>
+        <td class="cell-notes" title="${String(u.notes || "").replaceAll('"', "&quot;")}">${u.notes ? String(u.notes).slice(0, 140) : "—"}</td>
         <td>${actionButtons(u)}</td>
       </tr>
     `
@@ -303,6 +344,29 @@ unitForm.addEventListener("submit", async (event) => {
     await refresh();
     renderPermissionsNotice();
     render();
+
+    // If we're in select mode with a bound lead, also push the
+    // assignment into the parent lead page so the client card
+    // updates in a single flow.
+    if (isSelectMode && leadId && formData.flatNumber) {
+      const matched = unitsCache.find(
+        (u) =>
+          String(u.flatNumber || "").toLowerCase() === formData.flatNumber.toLowerCase() &&
+          String(u.tower || "").toLowerCase() === String(formData.tower || "").toLowerCase(),
+      );
+      if (matched) {
+        window.parent.postMessage(
+          {
+            type: "arkadians_inventory_assign",
+            unit: matched,
+            status: formData.status,
+            leadId,
+          },
+          "*",
+        );
+      }
+    }
+
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 });
@@ -323,8 +387,14 @@ inventoryBody.addEventListener("click", (event) => {
   if (!target) return;
 
   if (action === "select" && isSelectMode) {
-    // Populate the editor form for immediate feedback inside the iframe.
-    if (scope === "admin") {
+    if (scope !== "admin" && (HARD_LOCK_STATUSES.includes(target.status) || !USER_STATUSES.includes(target.status))) {
+      lastError = "This flat is locked and cannot be selected by sales users.";
+      renderPermissionsNotice();
+      return;
+    }
+
+    // Populate the editor form only on standalone inventory (not embedded on a lead).
+    if (scope === "admin" && !embeddedLeadFlow()) {
       populateForm(target);
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -332,7 +402,15 @@ inventoryBody.addEventListener("click", (event) => {
     window.parent.postMessage(
       {
         type: "arkadians_inventory_select",
-        unit: target,
+        unit: {
+          id: target.id,
+          tower: target.tower,
+          flatNumber: target.flatNumber,
+          type: target.type,
+          viewCategory: target.viewCategory,
+          notes: target.notes ?? null,
+          customerName: target.customerName ?? null,
+        },
         leadId: leadId || null
       },
       "*"
@@ -341,6 +419,7 @@ inventoryBody.addEventListener("click", (event) => {
   }
 
   if (action === "edit") {
+    if (embeddedLeadFlow()) return;
     populateForm(target);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }

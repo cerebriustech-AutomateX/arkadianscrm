@@ -11,7 +11,7 @@ export default async function AdminUsersPage() {
 
   return (
     <div className="px-5 sm:px-8 py-8">
-      <div className="max-w-[1440px] mx-auto">
+      <div className="w-full max-w-none">
         <div className="flex items-end justify-between gap-6">
           <div>
             <div className="text-xs tracking-[0.2em] uppercase text-medium-grey">

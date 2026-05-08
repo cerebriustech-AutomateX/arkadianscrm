@@ -3,11 +3,20 @@ import { usePathname } from "next/navigation";
 
 export function TopBar({
   user,
+  role,
 }: {
   user: { name: string; email: string } | null;
+  role?: string | null;
 }) {
   const pathname = usePathname();
-  const title = pathname.startsWith("/admin") ? "Arkadians Command Centre" : "The Arkadians Client Portfolio";
+  const isCeo = (role ?? "").toLowerCase() === "ceo";
+  const title = pathname.startsWith("/admin")
+    ? "Arkadians Command Centre"
+    : pathname.startsWith("/ceo")
+      ? "Executive overview"
+      : pathname === "/" && isCeo
+        ? "Executive dashboard"
+        : "The Arkadians Client Portfolio";
   return (
     <header className="sticky top-0 z-30 w-full bg-white/85 backdrop-blur border-b border-light-grey">
       <div className="h-16 px-5 sm:px-8 flex items-center justify-between">

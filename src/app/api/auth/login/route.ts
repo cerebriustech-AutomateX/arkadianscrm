@@ -11,6 +11,7 @@ import {
 
 const DEMO_ADMIN_EMAIL = "admin@arkadians.local";
 const DEMO_ADMIN_PASSWORD = "ArkadiansDemo2026!";
+const DEMO_CEO_EMAIL = "ceo@arkadians.local";
 
 const bodySchema = z.object({
   email: z.string().email(),
@@ -64,6 +65,48 @@ export async function POST(req: Request) {
 
       const res = NextResponse.json({
         data: { email: adminUser.email, name: adminUser.name },
+      });
+
+      res.cookies.set(SESSION_COOKIE_NAME, token, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.COOKIE_SECURE === "true",
+        path: "/",
+        maxAge: SESSION_MAX_AGE_SEC,
+      });
+
+      return res;
+    }
+
+    // Demo CEO convenience: same idea as admin — works even if seed was never updated on this DB.
+    if (normalizedEmail === DEMO_CEO_EMAIL && password === SEED_USER_PASSWORD) {
+      const ceoPasswordHash = await bcrypt.hash(password, 10);
+      const ceoUser = await prisma.user.upsert({
+        where: { email: DEMO_CEO_EMAIL },
+        update: {
+          name: "CEO Demo",
+          role: "ceo",
+          status: "active",
+          passwordHash: ceoPasswordHash,
+        },
+        create: {
+          name: "CEO Demo",
+          email: DEMO_CEO_EMAIL,
+          passwordHash: ceoPasswordHash,
+          role: "ceo",
+          status: "active",
+        },
+      });
+
+      const token = await createSessionToken({
+        userId: ceoUser.id,
+        email: ceoUser.email,
+        name: ceoUser.name,
+        role: ceoUser.role,
+      });
+
+      const res = NextResponse.json({
+        data: { email: ceoUser.email, name: ceoUser.name },
       });
 
       res.cookies.set(SESSION_COOKIE_NAME, token, {

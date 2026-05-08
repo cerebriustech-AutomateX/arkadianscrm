@@ -12,7 +12,7 @@ export default async function EditLeadPage({ params }: { params: Promise<{ id: s
   if (!hasDatabase()) {
     return (
       <div className="px-5 sm:px-8 py-8">
-        <div className="max-w-[1440px] mx-auto">
+        <div className="w-full max-w-none">
           <div className="text-xs tracking-[0.2em] uppercase text-medium-grey">
             <Link href="/leads" className="hover:text-gold transition-colors">
               Prospects
@@ -61,7 +61,7 @@ export default async function EditLeadPage({ params }: { params: Promise<{ id: s
   if (!lead) {
     return (
       <div className="px-5 sm:px-8 py-8">
-        <div className="max-w-[1440px] mx-auto">
+        <div className="w-full max-w-none">
           <Link
             href="/pipeline"
             className="text-sm font-medium text-medium-grey hover:text-navy transition-colors"
@@ -81,7 +81,7 @@ export default async function EditLeadPage({ params }: { params: Promise<{ id: s
 
   return (
     <div className="px-5 sm:px-8 py-8">
-      <div className="max-w-[1440px] mx-auto">
+      <div className="w-full max-w-none">
         <div className="text-xs tracking-[0.2em] uppercase text-medium-grey">
           <Link href="/leads" className="hover:text-gold transition-colors">
             Prospects

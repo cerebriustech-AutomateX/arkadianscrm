@@ -5,11 +5,13 @@ export default async function InventoryPage() {
   const session = await getSession();
   if (!session) redirect(`/login?from=${encodeURIComponent("/inventory")}`);
   const isAdmin = (session.role ?? "").toLowerCase() === "admin";
-  const src = isAdmin ? "/inventory/index.html?scope=admin" : "/inventory/index.html?scope=user&status=available";
+  const src = isAdmin
+    ? "/inventory/index.html?scope=admin&v=3"
+    : "/inventory/index.html?scope=user&status=available&v=3";
 
   return (
     <div className="px-5 sm:px-8 py-8">
-      <div className="max-w-[1440px] mx-auto">
+      <div className="w-full max-w-none">
         <div>
           <h1 className="font-(--font-display) text-3xl sm:text-4xl text-navy tracking-tight">
             Inventory

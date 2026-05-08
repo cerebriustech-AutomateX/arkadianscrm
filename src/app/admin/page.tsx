@@ -42,7 +42,7 @@ export default async function AdminPage() {
   if (!hasDatabase()) {
     return (
       <div className="px-5 sm:px-8 py-8">
-        <div className="max-w-[1440px] mx-auto">
+        <div className="w-full max-w-none">
           <div className="rounded-xl border border-light-grey bg-white shadow-card p-6">
             <div className="font-(--font-display) text-lg text-navy">Arkadians Command Centre</div>
             <p className="mt-2 text-sm text-medium-grey">
@@ -441,7 +441,7 @@ export default async function AdminPage() {
 
   return (
     <div className="px-5 sm:px-8 py-8">
-      <div className="max-w-[1440px] mx-auto">
+      <div className="w-full max-w-none">
         <ActivityOversightPanel />
         <AdminDashboardClient
           updatedLabel={formatDateTime(now)}

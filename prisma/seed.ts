@@ -49,6 +49,23 @@ async function main() {
     },
   });
 
+  await prisma.user.upsert({
+    where: { email: "ceo@arkadians.local" },
+    update: {
+      name: "CEO Demo",
+      role: "ceo",
+      status: "active",
+      passwordHash,
+    },
+    create: {
+      name: "CEO Demo",
+      email: "ceo@arkadians.local",
+      passwordHash,
+      role: "ceo",
+      status: "active",
+    },
+  });
+
   const salesRep = await prisma.user.upsert({
     where: { email: "sara@arkadians.local" },
     update: {
